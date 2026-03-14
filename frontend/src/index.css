@@ -1,0 +1,107 @@
+/* Rootstock / RSK Theme — Bitcoin DeFi Layer */
+:root {
+  --rsk-orange: #F7931A;
+  --rsk-orange-light: #FFB347;
+  --rsk-orange-dark: #E07B00;
+  --rsk-bg: #0D0D0F;
+  --rsk-surface: #161618;
+  --rsk-surface-elevated: #1E1E22;
+  --rsk-border: #2A2A2E;
+  --rsk-text: #A1A1AA;
+  --rsk-text-bright: #FAFAFA;
+  --rsk-text-muted: #71717A;
+
+  --text: var(--rsk-text);
+  --text-h: var(--rsk-text-bright);
+  --bg: var(--rsk-bg);
+  --border: var(--rsk-border);
+  --code-bg: var(--rsk-surface);
+  --accent: var(--rsk-orange);
+  --accent-bg: rgba(247, 147, 26, 0.12);
+  --accent-border: rgba(247, 147, 26, 0.4);
+  --social-bg: rgba(30, 30, 34, 0.8);
+  --shadow: rgba(0, 0, 0, 0.5) 0 10px 25px -5px, rgba(0, 0, 0, 0.3) 0 4px 10px -2px;
+  --shadow-glow: 0 0 40px rgba(247, 147, 26, 0.15);
+  --card-bg: var(--rsk-surface);
+
+  --sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Inter', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'Fira Code', Consolas, monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 768px) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100dvh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(247, 147, 26, 0.08) 0%, transparent 50%),
+    linear-gradient(180deg, var(--rsk-bg) 0%, #0a0a0c 100%);
+}
+
+h1, h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+h2 {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  line-height: 1.3;
+  margin: 0;
+}
+
+p { margin: 0; }
+
+code, .counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 0.9em;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
