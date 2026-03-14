@@ -73,8 +73,10 @@ Think of it like a savings account where instead of earning a tiny bit of intere
 
 ### Step 7: Withdraw (Anytime)
 - You can withdraw your principal at any time.
-- *(A withdraw button can be added to the UI if needed.)*
-- Redeem prUSDT for rUSDT at 1:1.
+- Switch to the **Withdraw** tab in the main section.
+- Enter the amount (or click **Max**) and confirm.
+- Your prUSDT is redeemed for rUSDT at 1:1.
+- There is no lock-up period.
 
 ---
 

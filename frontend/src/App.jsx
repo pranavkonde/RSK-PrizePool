@@ -22,12 +22,16 @@ function Countdown({ initialSeconds }) {
     }, 1000);
     return () => clearInterval(id);
   }, [initialSeconds]);
-  const h = Math.floor(seconds / 3600);
+  const d = Math.floor(seconds / (3600 * 24));
+  const h = Math.floor((seconds % (3600 * 24)) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return (
     <span className="countdown">
-      {h}d {m}h {s}s
+      {d > 0 && <><span className="countdown-value">{d}</span><span className="countdown-unit">d</span></>}
+      <span className="countdown-value">{h}</span><span className="countdown-unit">h</span>
+      <span className="countdown-value">{m}</span><span className="countdown-unit">m</span>
+      <span className="countdown-value">{s}</span><span className="countdown-unit">s</span>
     </span>
   );
 }
@@ -128,6 +132,7 @@ function App() {
 
   return (
     <div className="app">
+      <div className="background-glow" />
       <header className="app-header">
         <button onClick={() => setShowLanding(true)} className="logo-link">
           RSK Prize Pool
@@ -149,7 +154,7 @@ function App() {
               {isSwitching ? (
                 <span className="btn-loading-dots"><span /><span /><span /></span>
               ) : (
-                "Switch to Rootstock Testnet"
+                "Switch Network"
               )}
             </button>
           ) : (
@@ -158,93 +163,103 @@ function App() {
                 {chainId === 31 ? "Testnet" : chainId === 30 ? "Mainnet" : "Local"}
               </span>
               <span className="address">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-              <button onClick={() => disconnect()} className="btn btn-ghost">
-                Disconnect
+              <button onClick={() => disconnect()} className="btn btn-ghost" title="Disconnect">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               </button>
             </div>
           )}
         </div>
       </header>
 
-      <main className="app-main" role="main">
-        <section className="cards">
-          <div className="card card-prize">
-            <h2>Current Prize Pot</h2>
-            <p className="value">{prizeFormatted} rUSDT</p>
-            <p className="hint">Weekly raffle • One random winner takes all yield</p>
+      <main className="app-main">
+        <div className="dashboard-layout">
+          <div className="stats-column">
+            <section className="cards">
+              <div className="card card-prize">
+                <h2>Current Prize Pot</h2>
+                <div className="value">{prizeFormatted} <span className="unit">rUSDT</span></div>
+                <p className="hint">Weekly raffle • One random winner takes all yield</p>
+              </div>
+
+              <div className="card card-countdown">
+                <h2>Next Draw In</h2>
+                <div className="value">
+                  {secondsUntilDraw !== undefined ? (
+                    <Countdown initialSeconds={Number(secondsUntilDraw)} />
+                  ) : (
+                    <div className="skeleton" style={{ width: 180, height: 44, borderRadius: 12 }} />
+                  )}
+                </div>
+                <button
+                  onClick={() => drawWinner({ address: VAULT_ADDRESS, abi: prizePoolVaultAbi, functionName: "drawWinner", args: [] })}
+                  disabled={isDrawing || secondsUntilDraw === undefined || Number(secondsUntilDraw) > 0}
+                  className="btn btn-secondary"
+                  style={{ marginTop: 24, width: "100%" }}
+                >
+                  {isDrawing ? (
+                    <span className="btn-loading-dots"><span /><span /><span /></span>
+                  ) : (
+                    "Draw Winner"
+                  )}
+                </button>
+              </div>
+
+              <div className="card card-odds">
+                <h2>Your Odds</h2>
+                <div className="value">{oddsFormatted}<span className="unit">%</span></div>
+                <p className="hint">Based on your share of total deposits</p>
+                <div className="balance">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/></svg>
+                  {balanceFormatted} prUSDT
+                </div>
+              </div>
+            </section>
           </div>
 
-          <div className="card card-countdown">
-            <h2>Next Draw In</h2>
-            <p className="value">
-              {secondsUntilDraw !== undefined ? (
-                <Countdown initialSeconds={Number(secondsUntilDraw)} />
-              ) : (
-                <span className="skeleton" style={{ display: "inline-block", width: 80, height: 24 }} />
-              )}
-            </p>
-            <button
-              onClick={() => drawWinner({ address: VAULT_ADDRESS, abi: prizePoolVaultAbi, functionName: "drawWinner", args: [] })}
-              disabled={isDrawing || secondsUntilDraw === undefined || Number(secondsUntilDraw) > 0}
-              className="btn btn-secondary"
-            >
-              {isDrawing ? (
-                <span className="btn-loading-dots"><span /><span /><span /></span>
-              ) : (
-                "Draw Winner (when due)"
-              )}
-            </button>
-          </div>
-
-          <div className="card card-odds">
-            <h2>Your Odds</h2>
-            <p className="value">{oddsFormatted}%</p>
-            <p className="hint">Based on your share of total deposits</p>
-            <p className="balance">Your balance: {balanceFormatted} prUSDT</p>
-          </div>
-        </section>
-
-        <section className="deposit-section">
-          <div className="tabs">
-            <button 
-              className={`tab-btn ${activeTab === "deposit" ? "active" : ""}`} 
-              onClick={() => setActiveTab("deposit")}
-            >
-              Deposit
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === "withdraw" ? "active" : ""}`} 
-              onClick={() => setActiveTab("withdraw")}
-            >
-              Withdraw
-            </button>
-          </div>
-
-          {assetAddress ? (
-            activeTab === "deposit" ? (
-              <DepositForm
-                vaultAddress={VAULT_ADDRESS}
-                assetAddress={assetAddress}
-                isTestnet={TARGET_CHAIN_ID === 31}
-                chainId={TARGET_CHAIN_ID}
-                onSuccess={refetchAll}
-              />
-            ) : (
-              <WithdrawForm
-                vaultAddress={VAULT_ADDRESS}
-                isTestnet={TARGET_CHAIN_ID === 31}
-                chainId={TARGET_CHAIN_ID}
-                onSuccess={refetchAll}
-              />
-            )
-          ) : (
-            <div className="deposit-loading">
-              <div className="skeleton" style={{ height: 40, marginBottom: 12 }} />
-              <div className="skeleton" style={{ height: 48 }} />
-              <p className="hint" style={{ marginTop: 12 }}>Connect wallet and switch to the correct network</p>
+          <section className="deposit-section">
+            <div className="tabs">
+              <button 
+                className={`tab-btn ${activeTab === "deposit" ? "active" : ""}`} 
+                onClick={() => setActiveTab("deposit")}
+              >
+                Deposit
+              </button>
+              <button 
+                className={`tab-btn ${activeTab === "withdraw" ? "active" : ""}`} 
+                onClick={() => setActiveTab("withdraw")}
+              >
+                Withdraw
+              </button>
             </div>
-          )}
-        </section>
+
+            <div className="form-container">
+              {assetAddress ? (
+                activeTab === "deposit" ? (
+                  <DepositForm
+                    vaultAddress={VAULT_ADDRESS}
+                    assetAddress={assetAddress}
+                    isTestnet={TARGET_CHAIN_ID === 31}
+                    chainId={TARGET_CHAIN_ID}
+                    onSuccess={refetchAll}
+                  />
+                ) : (
+                  <WithdrawForm
+                    vaultAddress={VAULT_ADDRESS}
+                    isTestnet={TARGET_CHAIN_ID === 31}
+                    chainId={TARGET_CHAIN_ID}
+                    onSuccess={refetchAll}
+                  />
+                )
+              ) : (
+                <div className="deposit-loading">
+                  <div className="skeleton" style={{ height: 120, marginBottom: 24, borderRadius: 24 }} />
+                  <div className="skeleton" style={{ height: 64, borderRadius: 20 }} />
+                  <p className="hint" style={{ marginTop: 20, textAlign: "center" }}>Connect wallet to start saving</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
       </main>
     </div>
   );
@@ -332,18 +347,19 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, chainId, onSuccess
     }
   };
 
-  const balanceFormatted = assetBalance ? formatUnits(assetBalance, 6) : "0";
+  const balanceFormatted = assetBalance ? Number(formatUnits(assetBalance, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : "0";
 
   return (
     <div className="deposit-form-wrapper">
       {isTestnet && (
         <div className="faucet-row">
-          <span className="hint">Testnet: Get 1,000 test USDT</span>
+          <p className="hint">Need test tokens? Get 1,000 free test USDT for the Rootstock Testnet.</p>
           <button
             type="button"
             onClick={handleFaucet}
             disabled={!address || isMinting || isMintConfirming}
             className="btn btn-secondary"
+            style={{ width: "100%" }}
           >
             {(isMinting || isMintConfirming) ? (
               <span className="btn-loading-dots"><span /><span /><span /></span>
@@ -354,27 +370,32 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, chainId, onSuccess
           {mintError && <p className="error-msg">{mintError}</p>}
         </div>
       )}
-      <p className="hint">Your token balance: {balanceFormatted}</p>
+      
+      <div className="balance-row">
+        <p className="hint">Available: {balanceFormatted} USDT</p>
+        <button type="button" onClick={() => setAmount(formatUnits(assetBalance || 0n, 6))} className="btn-link">Max</button>
+      </div>
+
       <form onSubmit={handleDeposit} className="deposit-form">
         <input
           type="number"
-          placeholder={`Amount (${isTestnet ? "test USDT" : "rUSDT"})`}
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        min="0"
-        step="0.01"
-      />
-      <button
-        type="submit"
-        disabled={!amount || !address || isApproving || isDepositing}
-        className="btn btn-primary"
-      >
-        {(isApproving || isDepositing) ? (
-          <span className="btn-loading-dots"><span /><span /><span /></span>
-        ) : (
-          "Deposit"
-        )}
-      </button>
+          placeholder={`Amount in ${isTestnet ? "test USDT" : "rUSDT"}`}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          min="0"
+          step="0.01"
+        />
+        <button
+          type="submit"
+          disabled={!amount || !address || isApproving || isDepositing}
+          className="btn btn-primary"
+        >
+          {(isApproving || isDepositing) ? (
+            <span className="btn-loading-dots"><span /><span /><span /></span>
+          ) : (
+            "Deposit"
+          )}
+        </button>
       </form>
     </div>
   );
@@ -437,19 +458,20 @@ function WithdrawForm({ vaultAddress, isTestnet, chainId, onSuccess }) {
     }
   };
 
-  const balanceFormatted = userBalance ? formatUnits(userBalance, 6) : "0";
+  const balanceFormatted = userBalance ? Number(formatUnits(userBalance, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : "0";
   const isPending = isWithdrawing || isConfirming;
 
   return (
     <div className="deposit-form-wrapper">
       <div className="balance-row">
-        <p className="hint">Your prUSDT balance: {balanceFormatted}</p>
+        <p className="hint">Available: {balanceFormatted} prUSDT</p>
         <button type="button" onClick={handleMax} className="btn-link">Max</button>
       </div>
+
       <form onSubmit={handleWithdraw} className="deposit-form">
         <input
           type="number"
-          placeholder="Amount (prUSDT)"
+          placeholder="Amount in prUSDT"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           min="0"
@@ -469,7 +491,7 @@ function WithdrawForm({ vaultAddress, isTestnet, chainId, onSuccess }) {
         </button>
       </form>
       {error && <p className="error-msg" style={{ marginTop: 10 }}>{error}</p>}
-      <p className="hint" style={{ marginTop: 15 }}>
+      <p className="hint" style={{ marginTop: 8 }}>
         Withdrawals are 1:1. Your prUSDT will be redeemed for {isTestnet ? "test USDT" : "rUSDT"}.
       </p>
     </div>

@@ -4,6 +4,7 @@ import { parseAbi } from "viem";
 export const prizePoolVaultAbi = parseAbi([
   "function deposit(uint256 assets, address receiver) returns (uint256)",
   "function withdraw(uint256 assets, address receiver, address owner) returns (uint256)",
+  "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
   "function totalSupply() view returns (uint256)",
   "function totalAssets() view returns (uint256)",
