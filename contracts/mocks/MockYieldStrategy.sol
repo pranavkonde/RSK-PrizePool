@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../interfaces/IYieldStrategy.sol";
 
 /**
@@ -13,6 +14,7 @@ import "../interfaces/IYieldStrategy.sol";
  */
 contract MockYieldStrategy is IYieldStrategy {
     using SafeERC20 for IERC20;
+    using Math for uint256;
 
     IERC20 public immutable assetToken;
 
@@ -45,11 +47,11 @@ contract MockYieldStrategy is IYieldStrategy {
         uint256 available = assetToken.balanceOf(address(this));
         uint256 toSend = amount > available ? available : amount;
         assetToken.safeTransfer(msg.sender, toSend);
-        if (toSend <= totalDeposited) {
-            totalDeposited -= toSend;
-        } else {
-            totalDeposited = 0;
-        }
+        // Withdraw yield first (balance above tracked principal), then principal
+        uint256 yieldPart = available > totalDeposited ? available - totalDeposited : 0;
+        uint256 fromYield = toSend.min(yieldPart);
+        uint256 fromPrincipal = toSend - fromYield;
+        totalDeposited -= fromPrincipal;
         emit Withdrawn(msg.sender, toSend);
         return toSend;
     }

@@ -108,6 +108,26 @@ body {
   margin: 0 auto;
 }
 
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dashboard-layout {
+    max-width: 720px;
+    gap: 32px;
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .card-countdown {
+    grid-column: 1 / -1;
+  }
+
+  .deposit-section {
+    width: 100%;
+  }
+}
+
 @media (min-width: 1100px) {
   .dashboard-layout {
     flex-direction: row;

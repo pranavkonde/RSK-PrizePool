@@ -1,5 +1,5 @@
+import { useState } from "react";
 import { WagmiProvider, createConfig, http } from "wagmi";
-import { mainnet } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { injected } from "wagmi/connectors";
 
@@ -41,24 +41,20 @@ const localhost = {
   },
 };
 
-const config = createConfig({
-  chains: isTestnet
-    ? [rootstockTestnet, rootstock, localhost, mainnet]
-    : [localhost, rootstockTestnet, rootstock, mainnet],
+export const wagmiConfig = createConfig({
+  chains: isTestnet ? [rootstockTestnet, rootstock, localhost] : [localhost, rootstockTestnet, rootstock],
   transports: {
     [localhost.id]: http("http://127.0.0.1:8545"),
     [rootstockTestnet.id]: http("https://public-node.testnet.rsk.co"),
     [rootstock.id]: http("https://public-node.rsk.co"),
-    [mainnet.id]: http(),
   },
   connectors: [injected()],
 });
 
-const queryClient = new QueryClient();
-
 export function WagmiProviders({ children }) {
+  const [queryClient] = useState(() => new QueryClient());
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </WagmiProvider>
   );
