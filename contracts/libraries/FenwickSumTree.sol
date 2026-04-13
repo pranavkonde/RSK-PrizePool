@@ -52,6 +52,7 @@ library FenwickSumTree {
     }
 
     /// @return Smallest idx in [1, n] such that prefix(t, idx) > target (0-based target in [0, total-1])
+    /// @dev Binary search over prefix (O(log^2 n)); a single Fenwick walk-down must match this tree's layout exactly.
     function upperBound(
         mapping(uint256 => uint256) storage t,
         uint256 n,

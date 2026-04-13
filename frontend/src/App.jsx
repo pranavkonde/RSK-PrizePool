@@ -148,6 +148,12 @@ function App() {
     args: [],
   });
 
+  const { data: vaultOwner } = useReadContract({
+    ...readContractConfig,
+    functionName: "owner",
+    args: [],
+  });
+
   const refetchAll = () => {
     refetchVaultBalance();
     refetchPrizePot();
@@ -174,6 +180,8 @@ function App() {
 
   const drawDue = secondsUntilDraw !== undefined && Number(secondsUntilDraw) === 0;
   const hasPot = prizePot !== undefined && prizePot > 0n;
+  const isVaultOwner =
+    vaultOwner !== undefined && address && vaultOwner.toLowerCase() === address.toLowerCase();
   const needsCommit = drawDue && hasPot && (!drawCommitment || drawCommitment === "0x0000000000000000000000000000000000000000000000000000000000000000");
   const storedSecret = HAS_VAULT ? readStoredDrawSecret(VAULT_ADDRESS) : null;
   const canDrawWithSecret = drawDue && hasPot && isEntropyReady === true && storedSecret;
@@ -345,9 +353,9 @@ function App() {
                   )}
                 </div>
                 <p className="hint" style={{ marginTop: 12 }}>
-                  Prize draws use commit–reveal: commit entropy at least one hour before calling draw (see contract <code>ENTROPY_DELAY</code>).
+                  Prize draws use commit–reveal: the vault owner commits entropy at least one hour before calling draw (see <code>ENTROPY_DELAY</code>).
                 </p>
-                {needsCommit && (
+                {needsCommit && isVaultOwner && (
                   <button
                     type="button"
                     onClick={handleCommitEntropy}
@@ -365,6 +373,11 @@ function App() {
                       "Commit draw entropy"
                     )}
                   </button>
+                )}
+                {needsCommit && address && !isVaultOwner && (
+                  <p className="hint" style={{ marginTop: 16 }}>
+                    Only the vault owner can commit draw entropy. Connect the owner wallet or ask the operator to commit before the draw window.
+                  </p>
                 )}
                 {!needsCommit && hasPot && drawDue && drawCommitment && drawCommitment !== "0x0000000000000000000000000000000000000000000000000000000000000000" && isEntropyReady === false && entropyEtaSeconds !== null && (
                   <p className="hint" style={{ marginTop: 12 }}>

@@ -20,6 +20,7 @@ export const prizePoolVaultAbi = parseAbi([
   "function isEntropyReady() view returns (bool)",
   "function drawNumber() view returns (uint256)",
   "function asset() view returns (address)",
+  "function owner() view returns (address)",
   "function previewDeposit(uint256 assets) view returns (uint256)",
   "event PrizeDrawn(address indexed winner, uint256 amount, uint256 indexed drawNumber)",
 ]);

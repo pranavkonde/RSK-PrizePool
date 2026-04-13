@@ -15,8 +15,8 @@ import "./libraries/FenwickSumTree.sol";
  * @author Konde Pranav (https://github.com/pranavkonde)
  * @notice ERC4626-style vault: Users deposit rUSDT, funds earn yield in Sovryn (or mock).
  *        Weekly raffle: accumulated interest goes to one random depositor. Principal is safe.
- * @dev Randomness uses commit–reveal: call commitDrawEntropy before the draw with keccak256(secret).
- *      Winner selection uses a Fenwick tree over depositors for O(log n) gas per draw.
+ * @dev Randomness uses commit–reveal: the owner commits keccak256(secret) before the draw; the seed is
+ *      keccak256(secret, drawNumber) only (no block variables). Winner selection uses a Fenwick tree.
  */
 contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -115,12 +115,20 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         return nextDrawTimestamp - block.timestamp;
     }
 
-    /// @notice Commit entropy for the next prize draw. Anyone can commit; use a fresh secret per period.
-    function commitDrawEntropy(bytes32 commitment) external {
+    /// @notice Commit entropy for the next prize draw (owner only). Use a fresh secret per period.
+    function commitDrawEntropy(bytes32 commitment) external onlyOwner {
         require(commitment != bytes32(0), "PrizePool: invalid commitment");
+        require(drawEntropyCommitment == bytes32(0), "PrizePool: commitment exists");
         drawEntropyCommitment = commitment;
         entropyCommitBlock = block.number;
         entropyCommittedAt = block.timestamp;
+    }
+
+    /// @notice Clear a pending commitment (e.g. mistaken hash) so a new commit can be submitted.
+    function abandonDrawEntropyCommitment() external onlyOwner {
+        drawEntropyCommitment = bytes32(0);
+        entropyCommitBlock = 0;
+        entropyCommittedAt = 0;
     }
 
     /// @notice Whether a committed secret can be revealed for the current draw (time and block checks only).
@@ -176,7 +184,7 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
 
         _advanceDraw();
 
-        emit PrizeDrawn(winner, pot, drawNumber);
+        emit PrizeDrawn(winner, pot, dn);
     }
 
     function _validateEntropy(bytes32 secret) internal view {
@@ -193,19 +201,8 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         );
     }
 
-    function _randomSeed(bytes32 secret, uint256 dn) internal view returns (uint256) {
-        return
-            uint256(
-                keccak256(
-                    abi.encodePacked(
-                        secret,
-                        blockhash(block.number - 1),
-                        block.timestamp,
-                        dn,
-                        block.number
-                    )
-                )
-            );
+    function _randomSeed(bytes32 secret, uint256 dn) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(secret, dn)));
     }
 
     function _advanceDraw() internal {
@@ -216,7 +213,7 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev O(log n) weighted pick using Fenwick tree over unique holders
+    /// @dev Weighted pick using Fenwick tree (upperBound is O(log^2 n) holder count via binary search on prefix sums)
     function _selectWinner(uint256 seed, uint256 supply) internal view returns (address) {
         if (supply == 0 || _holderCount == 0) return address(0);
 
@@ -279,7 +276,6 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         delete _holderIndex[user];
         delete _shareCheckpoint[user];
 
-        // Swap-pop changes indices; rebuild Fenwick from live balances (O(n log n), avoids inconsistent partial sums).
         _rebuildFenwick(nBefore);
     }
 
@@ -294,6 +290,16 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
             require(bal > 0, "PrizePool: holder balance");
             _fenwick.add(n, i + 1, bal);
             _shareCheckpoint[h] = bal;
+        }
+    }
+
+    function _afterTokenTransfer(address from, address to, uint256 amount) internal virtual override {
+        super._afterTokenTransfer(from, to, amount);
+        if (from != address(0)) {
+            _syncHolder(from, balanceOf(from));
+        }
+        if (to != address(0)) {
+            _syncHolder(to, balanceOf(to));
         }
     }
 
@@ -316,8 +322,6 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         totalPrincipal += assets;
         _mint(receiver, shares);
         emit Deposit(caller, receiver, assets, shares);
-
-        _syncHolder(receiver, balanceOf(receiver));
     }
 
     function _withdraw(
@@ -332,7 +336,6 @@ contract PrizePoolVault is ERC4626, Ownable, ReentrancyGuard {
         }
 
         _burn(owner, shares);
-        _syncHolder(owner, balanceOf(owner));
 
         uint256 withdrawn = yieldStrategy.withdraw(assets);
         require(withdrawn >= assets, "PrizePool: strategy withdrawal failed");

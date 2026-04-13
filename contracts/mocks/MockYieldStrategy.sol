@@ -45,7 +45,8 @@ contract MockYieldStrategy is IYieldStrategy {
     function withdraw(uint256 amount) external override returns (uint256) {
         _accrueYield();
         uint256 available = assetToken.balanceOf(address(this));
-        uint256 toSend = amount > available ? available : amount;
+        require(amount <= available, "MockStrategy: insufficient balance");
+        uint256 toSend = amount;
         assetToken.safeTransfer(msg.sender, toSend);
         // Withdraw yield first (balance above tracked principal), then principal
         uint256 yieldPart = available > totalDeposited ? available - totalDeposited : 0;
