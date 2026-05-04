@@ -4,6 +4,7 @@ pragma solidity 0.8.19;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "../interfaces/IYieldStrategy.sol";
 
 /**
@@ -12,7 +13,7 @@ import "../interfaces/IYieldStrategy.sol";
  * @notice Simulates yield accrual for local development (simulates Sovryn-style lending)
  * In production, replace with actual Sovryn lending pool integration
  */
-contract MockYieldStrategy is IYieldStrategy {
+contract MockYieldStrategy is Ownable, IYieldStrategy {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -26,12 +27,28 @@ contract MockYieldStrategy is IYieldStrategy {
     uint256 public accruedYield; // Simulated yield (1e18 = 100% of deposits)
     uint256 public constant YIELD_RATE_PER_BLOCK = 1e14; // ~0.01% per block (adjustable)
 
+    /// @dev When set, totalAssets() returns this value (testing shortfall / prize pot capping only).
+    bool private _totalAssetsOverrideActive;
+    uint256 private _totalAssetsOverride;
+
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event YieldAccrued(uint256 amount);
 
-    constructor(address _asset) {
+    constructor(address _asset) Ownable() {
+        require(block.chainid != 30, "MockStrategy: mainnet forbidden");
         assetToken = IERC20(_asset);
+    }
+
+    /// @notice Test helper: force totalAssets() reporting (owner only). Pass type(uint256).max to clear override.
+    function setTotalAssetsOverride(uint256 value) external onlyOwner {
+        if (value == type(uint256).max) {
+            _totalAssetsOverrideActive = false;
+            _totalAssetsOverride = 0;
+        } else {
+            _totalAssetsOverrideActive = true;
+            _totalAssetsOverride = value;
+        }
     }
 
     function deposit(uint256 amount) external override returns (uint256) {
@@ -58,6 +75,9 @@ contract MockYieldStrategy is IYieldStrategy {
     }
 
     function totalAssets() external view override returns (uint256) {
+        if (_totalAssetsOverrideActive) {
+            return _totalAssetsOverride;
+        }
         return assetToken.balanceOf(address(this));
     }
 
@@ -68,7 +88,7 @@ contract MockYieldStrategy is IYieldStrategy {
 
     /// @notice Simulate yield by transferring tokens to this contract (for testing)
     /// In production, Sovryn lending returns yield automatically
-    function addYield(uint256 amount) external {
+    function addYield(uint256 amount) external onlyOwner {
         assetToken.safeTransferFrom(msg.sender, address(this), amount);
         accruedYield += amount;
         emit YieldAccrued(amount);

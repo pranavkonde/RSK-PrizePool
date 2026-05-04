@@ -14,6 +14,7 @@ export const prizePoolVaultAbi = parseAbi([
   "function secondsUntilNextDraw() view returns (uint256)",
   "function drawWinner(bytes32 secret)",
   "function commitDrawEntropy(bytes32 commitment)",
+  "function abandonDrawEntropyCommitment()",
   "function drawEntropyCommitment() view returns (bytes32)",
   "function entropyCommittedAt() view returns (uint256)",
   "function ENTROPY_DELAY() view returns (uint256)",
@@ -23,6 +24,9 @@ export const prizePoolVaultAbi = parseAbi([
   "function owner() view returns (address)",
   "function previewDeposit(uint256 assets) view returns (uint256)",
   "event PrizeDrawn(address indexed winner, uint256 amount, uint256 indexed drawNumber)",
+  "event DrawSkipped(uint256 indexed drawNumber, string reason)",
+  "event EntropyCommitted(uint256 indexed drawNumber, bytes32 commitment, uint256 commitBlock, uint256 commitTimestamp)",
+  "event EntropyCommitmentAbandoned(uint256 indexed drawNumber)",
 ]);
 
 // ERC20 ABI for approvals and balance

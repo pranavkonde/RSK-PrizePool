@@ -8,3 +8,4 @@ cache
 artifacts
 typechain
 typechain-types
+.vscode_hardhat_config_*.ts

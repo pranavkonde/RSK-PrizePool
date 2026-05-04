@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { time, mine } = require("@nomicfoundation/hardhat-network-helpers");
 
 function randomSecret() {
   return ethers.randomBytes(32);
@@ -93,7 +93,7 @@ describe("PrizePoolVault", function () {
       const secret = await commitEntropyForDraw();
       await time.increase(7 * 24 * 60 * 60 + 1);
 
-      await vault.drawWinner(secret);
+      await vault.connect(owner).drawWinner(secret);
 
       const aliceShares = await vault.balanceOf(alice.address);
       const bobShares = await vault.balanceOf(bob.address);
@@ -149,7 +149,7 @@ describe("PrizePoolVault", function () {
       const aliceBefore = await asset.balanceOf(alice.address);
       const bobBefore = await asset.balanceOf(bob.address);
 
-      const tx = await vault.drawWinner(secret);
+      const tx = await vault.connect(owner).drawWinner(secret);
       const receipt = await tx.wait();
       const drawEvent = receipt.logs
         .map((l) => {
@@ -181,7 +181,9 @@ describe("PrizePoolVault", function () {
 
       await time.increase(7 * 24 * 60 * 60 + 1);
 
-      await expect(vault.drawWinner(ethers.ZeroHash)).to.emit(vault, "DrawSkipped");
+      await expect(vault.connect(owner).drawWinner(ethers.ZeroHash))
+        .to.emit(vault, "DrawSkipped")
+        .withArgs(0n, "no yield");
     });
 
     it("should reject duplicate entropy commit while one is pending", async function () {
@@ -208,6 +210,12 @@ describe("PrizePoolVault", function () {
       expect(await vault.drawEntropyCommitment()).to.equal(c2);
     });
 
+    it("should revert abandonDrawEntropyCommitment when no commitment", async function () {
+      await expect(vault.connect(owner).abandonDrawEntropyCommitment()).to.be.revertedWith(
+        "PrizePool: no commitment"
+      );
+    });
+
     it("should revert prize draw without commit", async function () {
       const amount = ethers.parseUnits("1000", 6);
       await asset.connect(alice).approve(await vault.getAddress(), amount);
@@ -219,9 +227,87 @@ describe("PrizePoolVault", function () {
 
       await time.increase(7 * 24 * 60 * 60 + 1);
 
-      await expect(vault.drawWinner(randomSecret())).to.be.revertedWith(
+      await expect(vault.connect(owner).drawWinner(randomSecret())).to.be.revertedWith(
         "PrizePool: commit entropy first"
       );
+    });
+
+    it("should revert on bad secret reveal", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      await asset.connect(alice).approve(await vault.getAddress(), amount);
+      await vault.connect(alice).deposit(amount, alice.address);
+
+      const yieldAmount = ethers.parseUnits("50", 6);
+      await asset.connect(owner).approve(await strategy.getAddress(), yieldAmount);
+      await strategy.addYield(yieldAmount);
+
+      const secretA = randomSecret();
+      await vault.connect(owner).commitDrawEntropy(commitmentFromSecret(secretA));
+      await time.increase(Number(await vault.ENTROPY_DELAY()) + 1);
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(vault.connect(owner).drawWinner(randomSecret())).to.be.revertedWith("PrizePool: bad reveal");
+    });
+
+    it("should revert draw when entropy delay not elapsed", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      await asset.connect(alice).approve(await vault.getAddress(), amount);
+      await vault.connect(alice).deposit(amount, alice.address);
+
+      const yieldAmount = ethers.parseUnits("50", 6);
+      await asset.connect(owner).approve(await strategy.getAddress(), yieldAmount);
+      await strategy.addYield(yieldAmount);
+
+      const nextDraw = await vault.nextDrawTimestamp();
+      const delay = await vault.ENTROPY_DELAY();
+      await time.setNextBlockTimestamp(nextDraw - delay / 2n);
+      await vault.connect(owner).commitDrawEntropy(commitmentFromSecret(randomSecret()));
+
+      await time.setNextBlockTimestamp(nextDraw + 1n);
+      await mine();
+
+      await expect(vault.connect(owner).drawWinner(randomSecret())).to.be.revertedWith(
+        "PrizePool: entropy too fresh"
+      );
+    });
+
+    it("should reject drawWinner from non-owner", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      await asset.connect(alice).approve(await vault.getAddress(), amount);
+      await vault.connect(alice).deposit(amount, alice.address);
+
+      const yieldAmount = ethers.parseUnits("50", 6);
+      await asset.connect(owner).approve(await strategy.getAddress(), yieldAmount);
+      await strategy.addYield(yieldAmount);
+
+      const secret = await commitEntropyForDraw();
+      await time.increase(7 * 24 * 60 * 60 + 1);
+
+      await expect(vault.connect(alice).drawWinner(secret)).to.be.revertedWith(
+        "Ownable: caller is not the owner"
+      );
+    });
+
+    it("should report zero prize pot and skip draw when strategy assets below principal", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      await asset.connect(alice).approve(await vault.getAddress(), amount);
+      await vault.connect(alice).deposit(amount, alice.address);
+
+      await strategy.connect(owner).setTotalAssetsOverride(ethers.parseUnits("100", 6));
+      expect(await vault.currentPrizePot()).to.equal(0n);
+
+      await time.increase(7 * 24 * 60 * 60 + 1);
+      await expect(vault.connect(owner).drawWinner(ethers.ZeroHash))
+        .to.emit(vault, "DrawSkipped")
+        .withArgs(0n, "no yield");
+
+      await strategy.connect(owner).setTotalAssetsOverride(ethers.MaxUint256);
+    });
+
+    it("should reject addYield from non-owner on mock strategy", async function () {
+      const y = ethers.parseUnits("1", 6);
+      await asset.connect(alice).approve(await strategy.getAddress(), y);
+      await expect(strategy.connect(alice).addYield(y)).to.be.revertedWith("Ownable: caller is not the owner");
     });
 
     it("should keep Fenwick in sync when shares are transferred", async function () {
@@ -241,7 +327,7 @@ describe("PrizePoolVault", function () {
       const secret = await commitEntropyForDraw();
       await time.increase(7 * 24 * 60 * 60 + 1);
 
-      await vault.drawWinner(secret);
+      await vault.connect(owner).drawWinner(secret);
 
       const aliceShares = await vault.balanceOf(alice.address);
       const bobShares = await vault.balanceOf(bob.address);
@@ -273,7 +359,7 @@ describe("PrizePoolVault", function () {
 
       let secret = await commitEntropyForDraw();
       await time.increase(7 * 24 * 60 * 60 + 1);
-      await vault.drawWinner(secret);
+      await vault.connect(owner).drawWinner(secret);
 
       const y2 = ethers.parseUnits("15", 6);
       await asset.connect(owner).approve(await strategy.getAddress(), y2);
@@ -281,7 +367,7 @@ describe("PrizePoolVault", function () {
 
       secret = await commitEntropyForDraw();
       await time.increase(7 * 24 * 60 * 60 + 1);
-      await vault.drawWinner(secret);
+      await vault.connect(owner).drawWinner(secret);
 
       expect(await vault.drawNumber()).to.equal(2n);
     });
@@ -306,7 +392,7 @@ describe("PrizePoolVault", function () {
       const secret = await commitEntropyForDraw();
       await time.increase(7 * 24 * 60 * 60 + 1);
 
-      const tx = await vault.drawWinner(secret);
+      const tx = await vault.connect(owner).drawWinner(secret);
       const receipt = await tx.wait();
       expect(receipt.gasUsed).to.be.lessThan(6_500_000n);
     });

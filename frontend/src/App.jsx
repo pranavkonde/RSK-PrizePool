@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
 import "./Landing.css";
 import Landing from "./Landing.jsx";
@@ -13,6 +13,14 @@ const VAULT_ADDRESS = (import.meta.env.VITE_VAULT_ADDRESS || "0x0000000000000000
 const FALLBACK_ASSET_ADDRESS = (import.meta.env.VITE_ASSET_ADDRESS || "").toLowerCase();
 const HAS_VAULT = VAULT_ADDRESS && VAULT_ADDRESS !== "0x0000000000000000000000000000000000000000";
 const TARGET_CHAIN_ID = import.meta.env.VITE_CHAIN === "rootstock_testnet" ? 31 : import.meta.env.VITE_CHAIN === "rootstock" ? 30 : 31337;
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+const VAULT_READ_CONTRACT_BASE = {
+  address: HAS_VAULT ? VAULT_ADDRESS : undefined,
+  abi: prizePoolVaultAbi,
+  ...(TARGET_CHAIN_ID !== 31337 && { chainId: TARGET_CHAIN_ID }),
+};
 
 function drawSecretKey(vault) {
   return `rsk-prizepool-draw-secret:${vault}`;
@@ -57,7 +65,7 @@ function Countdown({ initialSeconds }) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return (
-    <span className="countdown">
+    <span className="countdown" aria-live="polite">
       {d > 0 && (
         <>
           <span className="countdown-value">{d}</span>
@@ -77,6 +85,9 @@ function Countdown({ initialSeconds }) {
 function formatTxError(err) {
   const msg = err?.shortMessage || err?.message || "Transaction failed";
   if (msg.includes("User rejected") || msg.includes("user rejected")) return "Transaction cancelled";
+  if (msg.includes("Internal server error") || msg.includes("-32603")) {
+    return "Wallet/RPC error (often wrong network or no gas). Switch MetaMask to Rootstock Testnet (chain 31), ensure test RBTC for gas, then retry.";
+  }
   return msg;
 }
 
@@ -91,84 +102,82 @@ function App() {
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const wrongChain = isConnected && chainId !== TARGET_CHAIN_ID;
 
-  const readContractConfig = useMemo(
-    () => ({
-      address: HAS_VAULT ? VAULT_ADDRESS : undefined,
-      abi: prizePoolVaultAbi,
-      ...(TARGET_CHAIN_ID !== 31337 && { chainId: TARGET_CHAIN_ID }),
-    }),
-    []
-  );
-
   const { data: userBalance, refetch: refetchVaultBalance } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "balanceOf",
-    args: [address || "0x0000000000000000000000000000000000000000"],
+    args: [address || ZERO_ADDRESS],
   });
 
   const { data: prizePot, refetch: refetchPrizePot } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "currentPrizePot",
     args: [],
   });
 
   const { data: userOdds, refetch: refetchOdds } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "getUserOdds",
-    args: [address || "0x0000000000000000000000000000000000000000"],
+    args: [address || ZERO_ADDRESS],
   });
 
   const { data: secondsUntilDraw, refetch: refetchDrawTime } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "secondsUntilNextDraw",
     args: [],
   });
 
   const { data: isEntropyReady, refetch: refetchEntropyReady } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "isEntropyReady",
     args: [],
   });
 
   const { data: drawCommitment, refetch: refetchCommitment } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "drawEntropyCommitment",
     args: [],
   });
 
   const { data: entropyCommittedAt } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "entropyCommittedAt",
     args: [],
   });
 
   const { data: entropyDelaySec } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "ENTROPY_DELAY",
     args: [],
   });
 
   const { data: vaultOwner } = useReadContract({
-    ...readContractConfig,
+    ...VAULT_READ_CONTRACT_BASE,
     functionName: "owner",
     args: [],
   });
 
-  const refetchAll = () => {
+  const { data: assetFromContract } = useReadContract({
+    ...VAULT_READ_CONTRACT_BASE,
+    functionName: "asset",
+    args: [],
+  });
+  const assetAddress = assetFromContract ?? (FALLBACK_ASSET_ADDRESS || undefined);
+
+  const refetchAll = useCallback(() => {
     refetchVaultBalance();
     refetchPrizePot();
     refetchOdds();
     refetchDrawTime();
     refetchEntropyReady();
     refetchCommitment();
-  };
-
-  const { data: assetFromContract } = useReadContract({
-    ...readContractConfig,
-    functionName: "asset",
-    args: [],
-  });
-  const assetAddress = assetFromContract || (FALLBACK_ASSET_ADDRESS || undefined);
+  }, [
+    refetchVaultBalance,
+    refetchPrizePot,
+    refetchOdds,
+    refetchDrawTime,
+    refetchEntropyReady,
+    refetchCommitment,
+  ]);
 
   const { writeContractAsync: writeVaultAsync, isPending: isVaultWriting } = useWriteContract();
 
@@ -184,7 +193,11 @@ function App() {
     vaultOwner !== undefined && address && vaultOwner.toLowerCase() === address.toLowerCase();
   const needsCommit = drawDue && hasPot && (!drawCommitment || drawCommitment === "0x0000000000000000000000000000000000000000000000000000000000000000");
   const storedSecret = HAS_VAULT ? readStoredDrawSecret(VAULT_ADDRESS) : null;
-  const canDrawWithSecret = drawDue && hasPot && isEntropyReady === true && storedSecret;
+  const commitmentPending =
+    drawCommitment && drawCommitment !== "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const secretMissingForCommit = Boolean(isVaultOwner && commitmentPending && !storedSecret);
+  const canDrawWithSecret =
+    drawDue && hasPot && isEntropyReady === true && storedSecret && isVaultOwner;
 
   const entropyEtaSeconds =
     drawCommitment &&
@@ -207,6 +220,25 @@ function App() {
         abi: prizePoolVaultAbi,
         functionName: "commitDrawEntropy",
         args: [commitment],
+        ...(TARGET_CHAIN_ID !== 31337 && { chainId: TARGET_CHAIN_ID }),
+      });
+      await waitForTransactionReceipt(wagmiConfig, { hash });
+      refetchAll();
+    } catch (err) {
+      setDrawError(formatTxError(err));
+      console.error(err);
+    }
+  };
+
+  const handleAbandonCommitment = async () => {
+    if (!HAS_VAULT) return;
+    setDrawError("");
+    try {
+      const hash = await writeVaultAsync({
+        address: VAULT_ADDRESS,
+        abi: prizePoolVaultAbi,
+        functionName: "abandonDrawEntropyCommitment",
+        args: [],
         ...(TARGET_CHAIN_ID !== 31337 && { chainId: TARGET_CHAIN_ID }),
       });
       await waitForTransactionReceipt(wagmiConfig, { hash });
@@ -293,8 +325,16 @@ function App() {
         </button>
         <div className="wallet">
           {!isConnected ? (
-            <button type="button" onClick={() => connect({ connector: connectors[0] })} className="btn btn-primary">
-              Connect Wallet
+            <button
+              type="button"
+              onClick={() => {
+                const c = connectors?.[0];
+                if (c) connect({ connector: c });
+              }}
+              disabled={!connectors?.length}
+              className="btn btn-primary"
+            >
+              {connectors?.length ? "Connect Wallet" : "No wallet extension"}
             </button>
           ) : wrongChain ? (
             <button
@@ -353,8 +393,24 @@ function App() {
                   )}
                 </div>
                 <p className="hint" style={{ marginTop: 12 }}>
-                  Prize draws use commit–reveal: the vault owner commits entropy at least one hour before calling draw (see <code>ENTROPY_DELAY</code>).
+                  Prize draws use commit–reveal: the vault owner commits entropy at least one hour before calling draw (see <code>ENTROPY_DELAY</code>). Only the owner wallet can run Draw winner.
                 </p>
+                {secretMissingForCommit && (
+                  <div className="hint" style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "rgba(255,145,0,0.12)", border: "1px solid rgba(255,145,0,0.35)" }} role="status">
+                    <p style={{ margin: 0 }}>
+                      A commitment is on-chain but this browser has no draw secret (e.g. session cleared). Commit again from this device after abandoning the pending commitment, or use Abandon commitment below.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAbandonCommitment}
+                      disabled={isVaultWriting || wrongChain}
+                      className="btn btn-secondary"
+                      style={{ marginTop: 10, width: "100%" }}
+                    >
+                      Abandon commitment
+                    </button>
+                  </div>
+                )}
                 {needsCommit && isVaultOwner && (
                   <button
                     type="button"
@@ -387,7 +443,9 @@ function App() {
                 <button
                   type="button"
                   onClick={handleDrawWinner}
-                  disabled={isVaultWriting || !drawDue || !hasPot || !canDrawWithSecret || wrongChain}
+                  disabled={
+                    isVaultWriting || !drawDue || !hasPot || !canDrawWithSecret || wrongChain || !isVaultOwner
+                  }
                   className="btn btn-secondary"
                   style={{ marginTop: 16, width: "100%" }}
                 >
@@ -495,6 +553,7 @@ function App() {
 
 function DepositForm({ vaultAddress, assetAddress, isTestnet, isLocal, chainId, onSuccess }) {
   const { address } = useAccount();
+  const walletChainId = useChainId();
   const [amount, setAmount] = useState("");
   const [mintError, setMintError] = useState("");
   const [formError, setFormError] = useState("");
@@ -516,7 +575,8 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, isLocal, chainId, 
     address: assetAddress,
     abi: erc20Abi,
     functionName: "balanceOf",
-    args: [address || "0x0"],
+    args: [address || ZERO_ADDRESS],
+    query: { enabled: Boolean(address) },
     ...(chainId && chainId !== 31337 && { chainId }),
   });
 
@@ -524,14 +584,25 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, isLocal, chainId, 
     address: assetAddress,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [address || "0x0", vaultAddress],
+    args: [address || ZERO_ADDRESS, vaultAddress],
+    query: { enabled: Boolean(address) },
     ...(chainId && chainId !== 31337 && { chainId }),
   });
 
-  const showMintFaucet = (isLocal || (isTestnet && tokenOwner && address && tokenOwner.toLowerCase() === address.toLowerCase()));
+  const onCorrectChain = walletChainId === chainId;
+  const showMintFaucet =
+    isLocal && tokenOwner && address && tokenOwner.toLowerCase() === address.toLowerCase()
+      ? true
+      : isTestnet
+        ? true
+        : false;
 
   const handleFaucet = async () => {
     if (!address || !assetAddress) return;
+    if (!onCorrectChain) {
+      setMintError(`Switch MetaMask to chain ${chainId} (Rootstock Testnet = 31) before minting.`);
+      return;
+    }
     setMintError("");
     try {
       const hash = await mintAsync({
@@ -539,7 +610,7 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, isLocal, chainId, 
         abi: mockErc20Abi,
         functionName: "mint",
         args: [address, BigInt(1000 * 1e6)],
-        ...(chainId && { chainId }),
+        chainId,
       });
       await waitForTransactionReceipt(wagmiConfig, { hash });
       refetchBalance();
@@ -601,13 +672,18 @@ function DepositForm({ vaultAddress, assetAddress, isTestnet, isLocal, chainId, 
         <div className="faucet-row">
           <p className="hint">
             {isLocal
-              ? "Local network: mint test USDT (deployer / owner only on shared mocks)."
-              : "You are the token owner: mint test USDT for this wallet."}
+              ? "Local network: mint test USDT (deployer / token owner only)."
+              : "Rootstock testnet: mint up to 10,000 mock USDT per transaction (test token only)."}
           </p>
+          {!onCorrectChain && address && (
+            <p className="error-msg" role="alert">
+              Wrong network — switch MetaMask to Rootstock Testnet (chain id {chainId}).
+            </p>
+          )}
           <button
             type="button"
             onClick={handleFaucet}
-            disabled={!address || isMinting}
+            disabled={!address || isMinting || !onCorrectChain}
             className="btn btn-secondary"
             style={{ width: "100%" }}
           >
@@ -703,7 +779,8 @@ function WithdrawForm({ vaultAddress, isTestnet, chainId, onSuccess }) {
     address: vaultAddress,
     abi: prizePoolVaultAbi,
     functionName: "balanceOf",
-    args: [address || "0x0"],
+    args: [address || ZERO_ADDRESS],
+    query: { enabled: Boolean(address) },
     ...(chainId && chainId !== 31337 && { chainId }),
   });
 

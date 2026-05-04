@@ -25,7 +25,13 @@ contract MockERC20 is ERC20, Ownable {
         return _decimals;
     }
 
-    function mint(address to, uint256 amount) external onlyOwner {
+    /// @notice On Rootstock testnet (chainId 31) anyone can mint a capped amount for testing. Other chains: owner only.
+    function mint(address to, uint256 amount) external {
+        if (block.chainid == 31) {
+            require(amount <= 10_000 * 10 ** _decimals, "MockERC20: faucet cap");
+        } else {
+            _checkOwner();
+        }
         _mint(to, amount);
     }
 }
